@@ -3173,6 +3173,10 @@ void update_camera(struct Camera *c) {
 
                 // Freeze camera by Agent X and Llennpie
 
+                gCamera->nextYaw = calculate_yaw(gLakituState.focus, gLakituState.pos);
+                gCamera->yaw = gCamera->nextYaw;
+                gCameraMovementFlags &= ~CAM_MOVE_FIX_IN_PLACE;
+
                 // Zoom In / Enter C-Up
                 if (gPlayer1Controller->buttonPressed & U_CBUTTONS) {
                     if (gCameraMovementFlags & CAM_MOVE_ZOOMED_OUT) {
