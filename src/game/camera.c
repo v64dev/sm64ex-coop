@@ -2594,70 +2594,75 @@ s32 exit_c_up(struct Camera *c) {
 
         // Search for an open direction to zoom out in, if the camera is changing to close, free roam,
         // or spiral-stairs mode
-        if (sModeInfo.lastMode == CAMERA_MODE_SPIRAL_STAIRS || sModeInfo.lastMode == CAMERA_MODE_CLOSE
-            || sModeInfo.lastMode == CAMERA_MODE_FREE_ROAM) {
-            searching = 1;
-            // Check the whole circle around Mario for an open direction to zoom out to
-            for (sector = 0; sector < 16 && searching == 1; sector++) {
-                vec3f_set_dist_and_angle(checkFoc, curPos, curDist, 0, curYaw + checkYaw);
 
-                // If there are no walls this way,
-                if (f32_find_wall_collision(&curPos[0], &curPos[1], &curPos[2], 20.f, 50.f) == 0) {
+        if (!gOverrideFreezeCamera) {
+            if (sModeInfo.lastMode == CAMERA_MODE_SPIRAL_STAIRS || sModeInfo.lastMode == CAMERA_MODE_CLOSE
+                || sModeInfo.lastMode == CAMERA_MODE_FREE_ROAM) {
+                searching = 1;
+                // Check the whole circle around Mario for an open direction to zoom out to
+                for (sector = 0; sector < 16 && searching == 1; sector++) {
+                    vec3f_set_dist_and_angle(checkFoc, curPos, curDist, 0, curYaw + checkYaw);
 
-                    // Start close to Mario, check for walls, floors, and ceilings all the way to the
-                    // zoomed out distance
-                    for (d = curDist; d < gCameraZoomDist; d += 20.f) {
-                        vec3f_set_dist_and_angle(checkFoc, curPos, d, 0, curYaw + checkYaw);
+                    // If there are no walls this way,
+                    if (f32_find_wall_collision(&curPos[0], &curPos[1], &curPos[2], 20.f, 50.f) == 0) {
 
-                        // Check if we're zooming out into a floor or ceiling
-                        ceilHeight = find_ceil(curPos[0], curPos[1] - 150.f, curPos[2], &surface) + -10.f;
-                        if (surface != NULL && ceilHeight < curPos[1]) {
-                            break;
+                        // Start close to Mario, check for walls, floors, and ceilings all the way to the
+                        // zoomed out distance
+                        for (d = curDist; d < gCameraZoomDist; d += 20.f) {
+                            vec3f_set_dist_and_angle(checkFoc, curPos, d, 0, curYaw + checkYaw);
+
+                            // Check if we're zooming out into a floor or ceiling
+                            ceilHeight = find_ceil(curPos[0], curPos[1] - 150.f, curPos[2], &surface) + -10.f;
+                            if (surface != NULL && ceilHeight < curPos[1]) {
+                                break;
+                            }
+                            floorHeight = find_floor(curPos[0], curPos[1] + 150.f, curPos[2], &surface) + 10.f;
+                            if (surface != NULL && floorHeight > curPos[1]) {
+                                break;
+                            }
+
+                            // Stop checking this direction if there is a wall blocking the way
+                            if (f32_find_wall_collision(&curPos[0], &curPos[1], &curPos[2], 20.f, 50.f) == 1) {
+                                break;
+                            }
                         }
-                        floorHeight = find_floor(curPos[0], curPos[1] + 150.f, curPos[2], &surface) + 10.f;
-                        if (surface != NULL && floorHeight > curPos[1]) {
-                            break;
-                        }
 
-                        // Stop checking this direction if there is a wall blocking the way
-                        if (f32_find_wall_collision(&curPos[0], &curPos[1], &curPos[2], 20.f, 50.f) == 1) {
-                            break;
+                        // If there was no collision found all the way to the max distance, it's an opening
+                        if (d >= gCameraZoomDist) {
+                            searching = 0;
                         }
                     }
 
-                    // If there was no collision found all the way to the max distance, it's an opening
-                    if (d >= gCameraZoomDist) {
-                        searching = 0;
+                    // Alternate left and right, checking each 1/16th (22.5 degrees) of the circle
+                    if (searching == 1) {
+                        checkYaw = -checkYaw;
+                        if (checkYaw < 0) {
+                            checkYaw -= 0x1000;
+                        } else {
+                            checkYaw += 0x1000;
+                        }
                     }
                 }
 
-                // Alternate left and right, checking each 1/16th (22.5 degrees) of the circle
-                if (searching == 1) {
-                    checkYaw = -checkYaw;
-                    if (checkYaw < 0) {
-                        checkYaw -= 0x1000;
-                    } else {
-                        checkYaw += 0x1000;
-                    }
+                // Update the stored focus and pos to the direction found in the search
+                if (searching == 0) {
+                    vec3f_set_dist_and_angle(checkFoc, sCameraStoreCUp.pos, gCameraZoomDist, 0, curYaw + checkYaw);
+                    vec3f_copy(sCameraStoreCUp.focus, checkFoc);
+                    vec3f_sub(sCameraStoreCUp.pos, sMarioCamState->pos);
+                    vec3f_sub(sCameraStoreCUp.focus, sMarioCamState->pos);
                 }
-            }
 
-            // Update the stored focus and pos to the direction found in the search
-            if (searching == 0) {
-                vec3f_set_dist_and_angle(checkFoc, sCameraStoreCUp.pos, gCameraZoomDist, 0, curYaw + checkYaw);
-                vec3f_copy(sCameraStoreCUp.focus, checkFoc);
-                vec3f_sub(sCameraStoreCUp.pos, sMarioCamState->pos);
-                vec3f_sub(sCameraStoreCUp.focus, sMarioCamState->pos);
+                gCameraMovementFlags |= CAM_MOVE_STARTED_EXITING_C_UP;
+                transition_next_state(c, 15);
+            } else {
+                // Let the next camera mode handle it
+                gCameraMovementFlags &= ~(CAM_MOVE_STARTED_EXITING_C_UP | CAM_MOVE_C_UP_MODE);
+                vec3f_set_dist_and_angle(checkFoc, c->pos, curDist, curPitch, curYaw + checkYaw);
             }
-
-            gCameraMovementFlags |= CAM_MOVE_STARTED_EXITING_C_UP;
-            transition_next_state(c, 15);
+            play_sound_cbutton_down();
         } else {
-            // Let the next camera mode handle it
             gCameraMovementFlags &= ~(CAM_MOVE_STARTED_EXITING_C_UP | CAM_MOVE_C_UP_MODE);
-            vec3f_set_dist_and_angle(checkFoc, c->pos, curDist, curPitch, curYaw + checkYaw);
         }
-        play_sound_cbutton_down();
     }
     return 0;
 }
@@ -3050,9 +3055,9 @@ void update_lakitu(struct Camera *c) {
  * Gets controller input, checks for cutscenes, handles mode changes, and moves the camera
  */
 void update_camera(struct Camera *c) {
-    if (gOverrideFreezeCamera) {
-        return;
-    }
+    //if (gOverrideFreezeCamera) {
+    //    return;
+    //}
     UNUSED u8 unused[24];
 
     gCamera = c;
@@ -3164,71 +3169,95 @@ void update_camera(struct Camera *c) {
                     mode_mario_camera(c);
             }
         } else {
-            switch (c->mode) {
-                case CAMERA_MODE_BEHIND_MARIO:
-                    mode_behind_mario_camera(c);
-                    break;
+            if (gOverrideFreezeCamera) {
 
-                case CAMERA_MODE_C_UP:
-                    mode_c_up_camera(c);
-                    break;
+                // Freeze camera by Agent X and Llennpie
 
-                case CAMERA_MODE_WATER_SURFACE:
-                    mode_water_surface_camera(c);
-                    break;
+                // Zoom In / Enter C-Up
+                if (gPlayer1Controller->buttonPressed & U_CBUTTONS) {
+                    if (gCameraMovementFlags & CAM_MOVE_ZOOMED_OUT) {
+                        gCameraMovementFlags &= ~CAM_MOVE_ZOOMED_OUT;
+                    } else {
+                        set_mode_c_up(c);
+                    }
+                }
+                // Zoom Out
+                if (gPlayer1Controller->buttonPressed & D_CBUTTONS) {
+                    if ((gCameraMovementFlags & CAM_MOVE_ZOOMED_OUT) == 0) {
+                        exit_c_up(c);
+                    }
+                }
+                if (c->mode == CAMERA_MODE_C_UP) {
+                    move_mario_head_c_up(c);
+                }
 
-                case CAMERA_MODE_INSIDE_CANNON:
-                    mode_cannon_camera(c);
-                    break;
+            } else {
+                switch (c->mode) {
+                    case CAMERA_MODE_BEHIND_MARIO:
+                        mode_behind_mario_camera(c);
+                        break;
 
-                case CAMERA_MODE_8_DIRECTIONS:
-                    mode_8_directions_camera(c);
-                    break;
+                    case CAMERA_MODE_C_UP:
+                        mode_c_up_camera(c);
+                        break;
 
-                case CAMERA_MODE_RADIAL:
-                    mode_radial_camera(c);
-                    break;
+                    case CAMERA_MODE_WATER_SURFACE:
+                        mode_water_surface_camera(c);
+                        break;
 
-                case CAMERA_MODE_OUTWARD_RADIAL:
-                    mode_outward_radial_camera(c);
-                    break;
+                    case CAMERA_MODE_INSIDE_CANNON:
+                        mode_cannon_camera(c);
+                        break;
 
-                case CAMERA_MODE_CLOSE:
-                    mode_lakitu_camera(c);
-                    break;
+                    case CAMERA_MODE_8_DIRECTIONS:
+                        mode_8_directions_camera(c);
+                        break;
 
-                case CAMERA_MODE_FREE_ROAM:
-                    mode_lakitu_camera(c);
-                    break;
-                case CAMERA_MODE_BOSS_FIGHT:
-                    mode_boss_fight_camera(c);
-                    break;
+                    case CAMERA_MODE_RADIAL:
+                        mode_radial_camera(c);
+                        break;
 
-                case CAMERA_MODE_PARALLEL_TRACKING:
-                    mode_parallel_tracking_camera(c);
-                    break;
+                    case CAMERA_MODE_OUTWARD_RADIAL:
+                        mode_outward_radial_camera(c);
+                        break;
 
-                case CAMERA_MODE_SLIDE_HOOT:
-                    mode_slide_camera(c);
-                    break;
+                    case CAMERA_MODE_CLOSE:
+                        mode_lakitu_camera(c);
+                        break;
 
-                case CAMERA_MODE_FIXED:
-                    mode_fixed_camera(c);
-                    break;
+                    case CAMERA_MODE_FREE_ROAM:
+                        mode_lakitu_camera(c);
+                        break;
+                    case CAMERA_MODE_BOSS_FIGHT:
+                        mode_boss_fight_camera(c);
+                        break;
 
-                case CAMERA_MODE_SPIRAL_STAIRS:
-                    mode_spiral_stairs_camera(c);
-                    break;
+                    case CAMERA_MODE_PARALLEL_TRACKING:
+                        mode_parallel_tracking_camera(c);
+                        break;
 
-                case CAMERA_MODE_ROM_HACK:
-                    mode_rom_hack_camera(c);
-                    break;
+                    case CAMERA_MODE_SLIDE_HOOT:
+                        mode_slide_camera(c);
+                        break;
+
+                    case CAMERA_MODE_FIXED:
+                        mode_fixed_camera(c);
+                        break;
+
+                    case CAMERA_MODE_SPIRAL_STAIRS:
+                        mode_spiral_stairs_camera(c);
+                        break;
+
+                    case CAMERA_MODE_ROM_HACK:
+                        mode_rom_hack_camera(c);
+                        break;
 
 #ifdef BETTERCAMERA
-                case CAMERA_MODE_NEWCAM:
-                    newcam_loop(c);
-                    break;
+                    case CAMERA_MODE_NEWCAM:
+                        newcam_loop(c);
+                        break;
 #endif
+                }
             }
         }
     }
@@ -3997,7 +4026,7 @@ s32 find_c_buttons_pressed(u16 currentState, u16 buttonsPressed, u16 buttonsDown
 s32 update_camera_hud_status(struct Camera *c) {
     s16 status = CAM_STATUS_NONE;
 
-    if (c->cutscene != 0
+    if (c->cutscene != 0 || gOverrideFreezeCamera
         || ((gPlayer1Controller->buttonDown & R_TRIG) && cam_select_alt_mode(0) == CAM_SELECTION_FIXED)) {
         status |= CAM_STATUS_FIXED;
     } else if (set_cam_angle(0) == CAM_ANGLE_MARIO) {
